@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.30"
+#property version   "1.31"
 
 #include <Trade/Trade.mqh>
 
@@ -79,7 +79,7 @@ bool HasOrderOrPositionAtLevel(const double levelPrice)
          continue;
 
       const ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type != ORDER_TYPE_BUY_LIMIT && type != ORDER_TYPE_BUY_STOP)
+      if(type != ORDER_TYPE_BUY_STOP)
          continue;
 
       const double orderPrice = OrderGetDouble(ORDER_PRICE_OPEN);
@@ -128,7 +128,7 @@ int CountActiveBuyExposure()
          continue;
 
       const ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP)
+      if(type == ORDER_TYPE_BUY_STOP)
          count++;
      }
 
@@ -136,7 +136,7 @@ int CountActiveBuyExposure()
   }
 
 //+------------------------------------------------------------------+
-//| Place buy pending order (limit below ask, stop above ask)        |
+//| Place buy stop pending order only                                 |
 //+------------------------------------------------------------------+
 bool PlaceBuyPendingAtLevel(const double levelPrice)
   {
@@ -155,10 +155,10 @@ bool PlaceBuyPendingAtLevel(const double levelPrice)
    trade.SetDeviationInPoints(InpSlippagePoints);
 
    bool sent = false;
-   if(price < ask)
-      sent = trade.BuyLimit(lot, price, _Symbol, 0.0, tp, ORDER_TIME_GTC, 0, "USOIL Grid BuyLimit");
-   else if(price > ask)
+   if(price > ask)
       sent = trade.BuyStop(lot, price, _Symbol, 0.0, tp, ORDER_TIME_GTC, 0, "USOIL Grid BuyStop");
+   else
+      return false;
 
    if(!sent)
      {
