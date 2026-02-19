@@ -12,7 +12,7 @@
 int OnInit()
   {
 //---
-   
+
 //---
    return(INIT_SUCCEEDED);
   }
@@ -22,7 +22,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
 //---
-   
+
   }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
@@ -30,6 +30,6 @@ void OnDeinit(const int reason)
 void OnTick()
   {
 //---
-   
+
   }
 //+------------------------------------------------------------------+
