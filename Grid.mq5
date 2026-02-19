@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.31"
+#property version   "1.32"
 
 #include <Trade/Trade.mqh>
 
@@ -37,6 +37,18 @@ int      slowHandle             = INVALID_HANDLE;
 datetime lastProcessedBarTime   = 0;
 double   accumulationAnchorPrice= 0.0;
 int      missedOrderCount       = 0;
+
+//+------------------------------------------------------------------+
+//| Resolve grid anchor price                                        |
+//+------------------------------------------------------------------+
+double ResolveGridAnchorPrice(const double referencePrice)
+  {
+   if(InpUseIntegerGrid && InpMaxTradePrice > 0.0)
+      return MathFloor(InpMaxTradePrice);
+
+   return referencePrice;
+  }
+
 
 //+------------------------------------------------------------------+
 //| Check price is within trade range                                |
@@ -90,6 +102,9 @@ void TrackMissedOrders(const double bidPrice)
 
       stepInPrice = InpIntegerGridStep;
       anchorBase  = MathFloor(accumulationAnchorPrice);
+
+      if(InpMaxTradePrice > 0.0)
+         anchorBase = MathFloor(InpMaxTradePrice);
      }
 
    if(stepInPrice <= 0.0)
@@ -235,14 +250,14 @@ void OnTick()
    if(trendReady && bullishCross)
      {
       if(accumulationAnchorPrice <= 0.0)
-         accumulationAnchorPrice = ask;
+         accumulationAnchorPrice = ResolveGridAnchorPrice(ask);
 
       const int bundleSize = 1 + missedOrderCount;
       if(OpenBundledOrder(bundleSize))
         {
          PrintFormat("Bundled BUY opened. bundle_size=%d, missed=%d, price=%.2f", bundleSize, missedOrderCount, ask);
          missedOrderCount = 0;
-         accumulationAnchorPrice = ask;
+         accumulationAnchorPrice = ResolveGridAnchorPrice(ask);
         }
      }
   }
