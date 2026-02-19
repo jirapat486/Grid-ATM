@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.21"
+#property version   "1.30"
 
 #include <Trade/Trade.mqh>
 
@@ -38,21 +38,17 @@ double NormalizeLot(const double lot)
   }
 
 //+------------------------------------------------------------------+
-//| Read current grid status for this EA                             |
+//| Check duplicated level from current positions or pending orders  |
 //+------------------------------------------------------------------+
-void GetGridStatus(int &buyCount, double &lowestBuyPrice)
+bool HasOrderOrPositionAtLevel(const double levelPrice)
   {
-   buyCount = 0;
-   lowestBuyPrice = 0.0;
+   const double tolerance = _Point * 0.5;
 
-   const int total = PositionsTotal();
-   for(int i = 0; i < total; i++)
+   const int positionsTotal = PositionsTotal();
+   for(int i = 0; i < positionsTotal; i++)
      {
       const ulong ticket = PositionGetTicket(i);
-      if(ticket == 0)
-         continue;
-
-      if(!PositionSelectByTicket(ticket))
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
          continue;
 
       if(PositionGetString(POSITION_SYMBOL) != _Symbol)
@@ -65,45 +61,142 @@ void GetGridStatus(int &buyCount, double &lowestBuyPrice)
          continue;
 
       const double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-      buyCount++;
-
-      if(lowestBuyPrice == 0.0 || openPrice < lowestBuyPrice)
-         lowestBuyPrice = openPrice;
+      if(MathAbs(openPrice - levelPrice) <= tolerance)
+         return true;
      }
+
+   const int ordersTotal = OrdersTotal();
+   for(int i = 0; i < ordersTotal; i++)
+     {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 || !OrderSelect(ticket))
+         continue;
+
+      if(OrderGetString(ORDER_SYMBOL) != _Symbol)
+         continue;
+
+      if((ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber)
+         continue;
+
+      const ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type != ORDER_TYPE_BUY_LIMIT && type != ORDER_TYPE_BUY_STOP)
+         continue;
+
+      const double orderPrice = OrderGetDouble(ORDER_PRICE_OPEN);
+      if(MathAbs(orderPrice - levelPrice) <= tolerance)
+         return true;
+     }
+
+   return false;
   }
 
-
 //+------------------------------------------------------------------+
-//| Check current price is in allowed trade zone                     |
+//| Count EA-owned buy positions + buy pending orders                |
 //+------------------------------------------------------------------+
-bool IsInTradeZone(const double price)
+int CountActiveBuyExposure()
   {
-   return (price >= InpMinTradePrice && price <= InpMaxTradePrice);
+   int count = 0;
+
+   const int positionsTotal = PositionsTotal();
+   for(int i = 0; i < positionsTotal; i++)
+     {
+      const ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol)
+         continue;
+
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber)
+         continue;
+
+      if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+         count++;
+     }
+
+   const int ordersTotal = OrdersTotal();
+   for(int i = 0; i < ordersTotal; i++)
+     {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 || !OrderSelect(ticket))
+         continue;
+
+      if(OrderGetString(ORDER_SYMBOL) != _Symbol)
+         continue;
+
+      if((ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber)
+         continue;
+
+      const ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP)
+         count++;
+     }
+
+   return count;
   }
 
 //+------------------------------------------------------------------+
-//| Open buy order                                                   |
+//| Place buy pending order (limit below ask, stop above ask)        |
 //+------------------------------------------------------------------+
-bool OpenBuyOrder()
+bool PlaceBuyPendingAtLevel(const double levelPrice)
   {
    const double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double tp = 0.0;
+   if(levelPrice <= 0.0 || ask <= 0.0)
+      return false;
 
+   const double price = NormalizeDouble(levelPrice, _Digits);
+   double tp = 0.0;
    if(InpTakeProfitPoints > 0)
-      tp = NormalizeDouble(ask + InpTakeProfitPoints * _Point, _Digits);
+      tp = NormalizeDouble(price + InpTakeProfitPoints * _Point, _Digits);
+
+   const double lot = NormalizeLot(InpLotSize);
 
    trade.SetExpertMagicNumber(InpMagicNumber);
    trade.SetDeviationInPoints(InpSlippagePoints);
 
-   const double lot = NormalizeLot(InpLotSize);
-   if(!trade.Buy(lot, _Symbol, 0.0, 0.0, tp, "USOIL Grid Buy"))
+   bool sent = false;
+   if(price < ask)
+      sent = trade.BuyLimit(lot, price, _Symbol, 0.0, tp, ORDER_TIME_GTC, 0, "USOIL Grid BuyLimit");
+   else if(price > ask)
+      sent = trade.BuyStop(lot, price, _Symbol, 0.0, tp, ORDER_TIME_GTC, 0, "USOIL Grid BuyStop");
+
+   if(!sent)
      {
-      PrintFormat("Buy failed. retcode=%d (%s)", trade.ResultRetcode(), trade.ResultRetcodeDescription());
+      PrintFormat("Pending order failed. level=%.2f retcode=%d (%s)",
+                  price,
+                  trade.ResultRetcode(),
+                  trade.ResultRetcodeDescription());
       return false;
      }
 
-   PrintFormat("Buy opened. lot=%.2f price=%.2f", lot, ask);
    return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Build pending grid from min to max trade price                   |
+//+------------------------------------------------------------------+
+void RefillPendingGrid()
+  {
+   const double stepPrice = InpGridStepPoints * _Point;
+   if(stepPrice <= 0.0)
+      return;
+
+   int activeExposure = CountActiveBuyExposure();
+   if(activeExposure >= InpMaxBuyOrders)
+      return;
+
+   for(double level = InpMinTradePrice; level <= InpMaxTradePrice + (stepPrice * 0.1); level += stepPrice)
+     {
+      if(activeExposure >= InpMaxBuyOrders)
+         break;
+
+      const double gridLevel = NormalizeDouble(level, _Digits);
+      if(HasOrderOrPositionAtLevel(gridLevel))
+         continue;
+
+      if(PlaceBuyPendingAtLevel(gridLevel))
+         activeExposure++;
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -135,28 +228,6 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   int buyCount = 0;
-   double lowestBuyPrice = 0.0;
-   GetGridStatus(buyCount, lowestBuyPrice);
-
-   const double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   if(!IsInTradeZone(bid))
-      return;
-
-   // เปิดออเดอร์แรกถ้ายังไม่มีออเดอร์ Buy ของ EA นี้
-   if(buyCount == 0)
-     {
-      OpenBuyOrder();
-      return;
-     }
-
-   if(buyCount >= InpMaxBuyOrders)
-      return;
-
-   const double nextGridLevel = lowestBuyPrice - InpGridStepPoints * _Point;
-
-   // Grid Buy only: ราคาไหลลงถึงระยะ grid ให้เปิด Buy เพิ่ม
-   if(bid <= nextGridLevel)
-      OpenBuyOrder();
+   RefillPendingGrid();
   }
 //+------------------------------------------------------------------+
