@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.32"
+#property version   "1.33"
 
 #include <Trade/Trade.mqh>
 
@@ -38,9 +38,9 @@ double NormalizeLot(const double lot)
   }
 
 //+------------------------------------------------------------------+
-//| Check duplicated level from current positions or pending orders  |
+//| Check duplicated level from current buy positions                |
 //+------------------------------------------------------------------+
-bool HasOrderOrPositionAtLevel(const double levelPrice)
+bool HasBuyPositionAtLevel(const double levelPrice)
   {
    const double target = NormalizeDouble(levelPrice, _Digits);
    const double tolerance = _Point;
@@ -66,6 +66,17 @@ bool HasOrderOrPositionAtLevel(const double levelPrice)
          return true;
      }
 
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Check duplicated level from current pending buy orders           |
+//+------------------------------------------------------------------+
+bool HasPendingBuyOrderAtLevel(const double levelPrice)
+  {
+   const double target = NormalizeDouble(levelPrice, _Digits);
+   const double tolerance = _Point;
+
    const int ordersTotal = OrdersTotal();
    for(int i = 0; i < ordersTotal; i++)
      {
@@ -80,9 +91,7 @@ bool HasOrderOrPositionAtLevel(const double levelPrice)
          continue;
 
       const ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type != ORDER_TYPE_BUY_STOP &&
-         type != ORDER_TYPE_BUY_LIMIT &&
-         type != ORDER_TYPE_BUY_STOP_LIMIT)
+      if(type != ORDER_TYPE_BUY_STOP)
          continue;
 
       const double orderPrice = NormalizeDouble(OrderGetDouble(ORDER_PRICE_OPEN), _Digits);
@@ -91,6 +100,17 @@ bool HasOrderOrPositionAtLevel(const double levelPrice)
      }
 
    return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Check duplicated level from current positions or pending orders  |
+//+------------------------------------------------------------------+
+bool HasOrderOrPositionAtLevel(const double levelPrice)
+  {
+   if(HasPendingBuyOrderAtLevel(levelPrice))
+      return true;
+
+   return HasBuyPositionAtLevel(levelPrice);
   }
 
 //+------------------------------------------------------------------+
@@ -148,6 +168,9 @@ bool PlaceBuyPendingAtLevel(const double levelPrice)
       return false;
 
    const double price = NormalizeDouble(levelPrice, _Digits);
+   if(HasPendingBuyOrderAtLevel(price))
+      return false;
+
    double tp = 0.0;
    if(InpTakeProfitPoints > 0)
       tp = NormalizeDouble(price + InpTakeProfitPoints * _Point, _Digits);
