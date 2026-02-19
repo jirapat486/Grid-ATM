@@ -17,15 +17,18 @@ input int             InpSlowEMAPeriod   = 10;
 
 input group "Order setup"
 input double          InpBaseLot         = 0.01;
-input int             InpGridStepPoints  = 300;
-input int             InpTakeProfitPoints= 600;
+input int             InpGridStepPoints  = 1000;
+input int             InpTakeProfitPoints= 1000;
 input int             InpMaxMissedOrders = 6;
 input ulong           InpMagicNumber     = 26012026;
 input int             InpSlippagePoints  = 20;
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 input group "Trade zone (price filter)"
-input double          InpMinTradePrice   = 0.0;
-input double          InpMaxTradePrice   = 0.0;
+input double          InpMinTradePrice   = 70.0;
+input double          InpMaxTradePrice   = 60.0;
 
 CTrade trade;
 
@@ -202,11 +205,11 @@ void OnTick()
    const bool trendReady = (bid > trendNow);
    const bool bullishCross = (fastPrev <= slowPrev && fastNow > slowNow);
 
-   // เก็บจำนวนออเดอร์ที่ไม่ได้เปิดไว้ระหว่างตลาดพักตัว/ขาลง
+// เก็บจำนวนออเดอร์ที่ไม่ได้เปิดไว้ระหว่างตลาดพักตัว/ขาลง
    if(!trendReady || fastNow <= slowNow)
       TrackMissedOrders(bid);
 
-   // เมื่อกลับมามีแนวโน้มขึ้นและเกิดสัญญาณตัดขึ้น ให้รวบเป็นออเดอร์เดียว
+// เมื่อกลับมามีแนวโน้มขึ้นและเกิดสัญญาณตัดขึ้น ให้รวบเป็นออเดอร์เดียว
    if(trendReady && bullishCross)
      {
       if(accumulationAnchorPrice <= 0.0)
