@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.20"
+#property version   "1.21"
 
 #include <Trade/Trade.mqh>
 
@@ -48,7 +48,11 @@ void GetGridStatus(int &buyCount, double &lowestBuyPrice)
    const int total = PositionsTotal();
    for(int i = 0; i < total; i++)
      {
-      if(!PositionSelectByIndex(i))
+      const ulong ticket = PositionGetTicket(i);
+      if(ticket == 0)
+         continue;
+
+      if(!PositionSelectByTicket(ticket))
          continue;
 
       if(PositionGetString(POSITION_SYMBOL) != _Symbol)
