@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.30"
+#property version   "1.21"
 
 #include <Trade/Trade.mqh>
 
@@ -17,17 +17,18 @@ input int             InpSlowEMAPeriod   = 10;
 
 input group "Order setup"
 input double          InpBaseLot         = 0.01;
-input int             InpGridStepPoints  = 300;
-input bool            InpUseIntegerGrid  = true;
-input double          InpIntegerGridStep = 1.0;
-input int             InpTakeProfitPoints= 600;
+input int             InpGridStepPoints  = 1000;
+input int             InpTakeProfitPoints= 1000;
 input int             InpMaxMissedOrders = 6;
 input ulong           InpMagicNumber     = 26012026;
 input int             InpSlippagePoints  = 20;
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 input group "Trade zone (price filter)"
-input double          InpMinTradePrice   = 0.0;
-input double          InpMaxTradePrice   = 0.0;
+input double          InpMinTradePrice   = 70.0;
+input double          InpMaxTradePrice   = 60.0;
 
 CTrade trade;
 
@@ -79,30 +80,13 @@ void TrackMissedOrders(const double bidPrice)
    if(missedOrderCount >= InpMaxMissedOrders)
       return;
 
-   double stepInPrice = InpGridStepPoints * _Point;
-   double anchorBase  = accumulationAnchorPrice;
-
-   // โหมดกริดแบบเลขจำนวนเต็มราคา เช่น 70, 69, 68, ...
-   if(InpUseIntegerGrid)
-     {
-      if(InpIntegerGridStep <= 0.0)
-         return;
-
-      stepInPrice = InpIntegerGridStep;
-      anchorBase  = MathFloor(accumulationAnchorPrice);
-     }
-
+   const double stepInPrice = InpGridStepPoints * _Point;
    if(stepInPrice <= 0.0)
       return;
 
-   while(missedOrderCount < InpMaxMissedOrders)
-     {
-      const double nextLevel = anchorBase - stepInPrice * (missedOrderCount + 1);
-      if(bidPrice <= nextLevel)
-         missedOrderCount++;
-      else
-         break;
-     }
+   const double nextLevel = accumulationAnchorPrice - stepInPrice * (missedOrderCount + 1);
+   if(bidPrice <= nextLevel)
+      missedOrderCount++;
   }
 
 //+------------------------------------------------------------------+
@@ -169,12 +153,6 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
      }
 
-   if(InpUseIntegerGrid && InpIntegerGridStep <= 0.0)
-     {
-      Print("Invalid grid setup: InpIntegerGridStep must be greater than 0");
-      return INIT_PARAMETERS_INCORRECT;
-     }
-
    trendHandle = iMA(_Symbol, InpTimeframe, InpTrendEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
    fastHandle  = iMA(_Symbol, InpTimeframe, InpFastEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
    slowHandle  = iMA(_Symbol, InpTimeframe, InpSlowEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
@@ -227,11 +205,11 @@ void OnTick()
    const bool trendReady = (bid > trendNow);
    const bool bullishCross = (fastPrev <= slowPrev && fastNow > slowNow);
 
-   // เก็บจำนวนออเดอร์ที่ไม่ได้เปิดไว้ระหว่างตลาดพักตัว/ขาลง
+// เก็บจำนวนออเดอร์ที่ไม่ได้เปิดไว้ระหว่างตลาดพักตัว/ขาลง
    if(!trendReady || fastNow <= slowNow)
       TrackMissedOrders(bid);
 
-   // เมื่อกลับมามีแนวโน้มขึ้นและเกิดสัญญาณตัดขึ้น ให้รวบเป็นออเดอร์เดียว
+// เมื่อกลับมามีแนวโน้มขึ้นและเกิดสัญญาณตัดขึ้น ให้รวบเป็นออเดอร์เดียว
    if(trendReady && bullishCross)
      {
       if(accumulationAnchorPrice <= 0.0)
