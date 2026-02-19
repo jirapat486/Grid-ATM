@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.31"
+#property version   "1.32"
 
 #include <Trade/Trade.mqh>
 
@@ -42,7 +42,8 @@ double NormalizeLot(const double lot)
 //+------------------------------------------------------------------+
 bool HasOrderOrPositionAtLevel(const double levelPrice)
   {
-   const double tolerance = _Point * 0.5;
+   const double target = NormalizeDouble(levelPrice, _Digits);
+   const double tolerance = _Point;
 
    const int positionsTotal = PositionsTotal();
    for(int i = 0; i < positionsTotal; i++)
@@ -60,8 +61,8 @@ bool HasOrderOrPositionAtLevel(const double levelPrice)
       if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_BUY)
          continue;
 
-      const double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-      if(MathAbs(openPrice - levelPrice) <= tolerance)
+      const double openPrice = NormalizeDouble(PositionGetDouble(POSITION_PRICE_OPEN), _Digits);
+      if(MathAbs(openPrice - target) <= tolerance)
          return true;
      }
 
@@ -79,11 +80,13 @@ bool HasOrderOrPositionAtLevel(const double levelPrice)
          continue;
 
       const ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type != ORDER_TYPE_BUY_STOP)
+      if(type != ORDER_TYPE_BUY_STOP &&
+         type != ORDER_TYPE_BUY_LIMIT &&
+         type != ORDER_TYPE_BUY_STOP_LIMIT)
          continue;
 
-      const double orderPrice = OrderGetDouble(ORDER_PRICE_OPEN);
-      if(MathAbs(orderPrice - levelPrice) <= tolerance)
+      const double orderPrice = NormalizeDouble(OrderGetDouble(ORDER_PRICE_OPEN), _Digits);
+      if(MathAbs(orderPrice - target) <= tolerance)
          return true;
      }
 
@@ -185,11 +188,13 @@ void RefillPendingGrid()
    if(activeExposure >= InpMaxBuyOrders)
       return;
 
-   for(double level = InpMinTradePrice; level <= InpMaxTradePrice + (stepPrice * 0.1); level += stepPrice)
+   const int steps = (int)MathFloor(((InpMaxTradePrice - InpMinTradePrice) / stepPrice) + 0.0000001);
+   for(int idx = 0; idx <= steps; idx++)
      {
       if(activeExposure >= InpMaxBuyOrders)
          break;
 
+      const double level = InpMinTradePrice + (idx * stepPrice);
       const double gridLevel = NormalizeDouble(level, _Digits);
       if(HasOrderOrPositionAtLevel(gridLevel))
          continue;
