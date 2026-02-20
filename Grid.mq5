@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.33"
+#property version   "1.34"
 
 #include <Trade/Trade.mqh>
 
@@ -18,8 +18,18 @@ input int    InpMaxBuyOrders     = 300;
 input int    InpTakeProfitPoints = 1000;
 input ulong  InpMagicNumber      = 20260201;
 input int    InpSlippagePoints   = 20;
+input int    InpDuplicateTolerancePoints = 10;
 
 CTrade trade;
+
+//+------------------------------------------------------------------+
+//| Convert duplicate tolerance points to price distance             |
+//+------------------------------------------------------------------+
+double GetDuplicateTolerancePrice()
+  {
+   const double tolerance = InpDuplicateTolerancePoints * _Point;
+   return MathMax(tolerance, _Point);
+  }
 
 //+------------------------------------------------------------------+
 //| Normalize lot by symbol settings                                 |
@@ -43,7 +53,7 @@ double NormalizeLot(const double lot)
 bool HasBuyPositionAtLevel(const double levelPrice)
   {
    const double target = NormalizeDouble(levelPrice, _Digits);
-   const double tolerance = _Point;
+   const double tolerance = GetDuplicateTolerancePrice();
 
    const int positionsTotal = PositionsTotal();
    for(int i = 0; i < positionsTotal; i++)
@@ -75,7 +85,7 @@ bool HasBuyPositionAtLevel(const double levelPrice)
 bool HasPendingBuyOrderAtLevel(const double levelPrice)
   {
    const double target = NormalizeDouble(levelPrice, _Digits);
-   const double tolerance = _Point;
+   const double tolerance = GetDuplicateTolerancePrice();
 
    const int ordersTotal = OrdersTotal();
    for(int i = 0; i < ordersTotal; i++)
@@ -168,7 +178,7 @@ bool PlaceBuyPendingAtLevel(const double levelPrice)
       return false;
 
    const double price = NormalizeDouble(levelPrice, _Digits);
-   if(HasPendingBuyOrderAtLevel(price))
+   if(HasOrderOrPositionAtLevel(price))
       return false;
 
    double tp = 0.0;
@@ -239,6 +249,9 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
 
    if(InpMinTradePrice >= InpMaxTradePrice)
+      return INIT_PARAMETERS_INCORRECT;
+
+   if(InpDuplicateTolerancePoints < 0)
       return INIT_PARAMETERS_INCORRECT;
 
    return INIT_SUCCEEDED;
