@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.35"
+#property version   "1.36"
 
 #include <Trade/Trade.mqh>
 
@@ -27,6 +27,8 @@ int CountEA_Positions();
 int CountEA_Pendings();
 int CountEA_TotalActive();
 void UpdateStatusComment();
+int CalculateBundledOrderCount(const double askPrice);
+bool PlaceBundledStartOrder();
 
 //+------------------------------------------------------------------+
 //| Convert duplicate tolerance points to price distance             |
@@ -267,6 +269,76 @@ bool PlaceBuyPendingAtLevel(const double levelPrice)
    return true;
   }
 
+
+//+------------------------------------------------------------------+
+//| Calculate bundled count from max price to current ask            |
+//+------------------------------------------------------------------+
+int CalculateBundledOrderCount(const double askPrice)
+  {
+   if(askPrice <= 0.0)
+      return 0;
+
+   if(askPrice >= InpMaxTradePrice)
+      return 0;
+
+   const double distance = InpMaxTradePrice - askPrice;
+   const int bundledCount = (int)MathCeil(distance);
+   return MathMax(0, MathMin(bundledCount, InpMaxBuyOrders));
+  }
+
+//+------------------------------------------------------------------+
+//| Open bundled startup pending order when no active order exists   |
+//+------------------------------------------------------------------+
+bool PlaceBundledStartOrder()
+  {
+   if(CountEA_TotalActive() > 0)
+      return false;
+
+   const double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(ask <= 0.0)
+      return false;
+
+   const int bundledCount = CalculateBundledOrderCount(ask);
+   if(bundledCount <= 0)
+      return false;
+
+   const double levelPrice = NormalizeDouble(MathCeil(ask), _Digits);
+   if(levelPrice > InpMaxTradePrice)
+      return false;
+
+   if(HasOrderOrPositionAtLevel(levelPrice))
+      return false;
+
+   const double bundledLot = NormalizeLot(InpLotSize * bundledCount);
+   double tp = 0.0;
+   if(InpTakeProfitPoints > 0)
+      tp = NormalizeDouble(levelPrice + InpTakeProfitPoints * _Point, _Digits);
+
+   trade.SetExpertMagicNumber(InpMagicNumber);
+   trade.SetDeviationInPoints(InpSlippagePoints);
+
+   const bool sent = trade.BuyStop(bundledLot,
+                                   levelPrice,
+                                   _Symbol,
+                                   0.0,
+                                   tp,
+                                   ORDER_TIME_GTC,
+                                   0,
+                                   "USOIL Grid BundledStart");
+   if(!sent)
+     {
+      PrintFormat("Bundled start order failed. level=%.2f count=%d lot=%.2f retcode=%d (%s)",
+                  levelPrice,
+                  bundledCount,
+                  bundledLot,
+                  trade.ResultRetcode(),
+                  trade.ResultRetcodeDescription());
+      return false;
+     }
+
+   return true;
+  }
+
 //+------------------------------------------------------------------+
 //| Build pending grid from min to max trade price                   |
 //+------------------------------------------------------------------+
@@ -329,6 +401,13 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    g_nextRun = TimeCurrent();
+
+   if(PlaceBundledStartOrder())
+     {
+      UpdateStatusComment();
+      return;
+     }
+
    RefillPendingGrid();
    UpdateStatusComment();
   }
