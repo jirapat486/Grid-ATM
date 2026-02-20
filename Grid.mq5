@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.36"
+#property version   "1.37"
 
 #include <Trade/Trade.mqh>
 
@@ -298,45 +298,55 @@ bool PlaceBundledStartOrder()
    if(ask <= 0.0)
       return false;
 
-   const int bundledCount = CalculateBundledOrderCount(ask);
+   int bundledCount = CalculateBundledOrderCount(ask);
    if(bundledCount <= 0)
       return false;
 
-   const double levelPrice = NormalizeDouble(MathCeil(ask), _Digits);
+   const int stopLevelPoints = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   const double minStopPrice = ask + (MathMax(0, stopLevelPoints) * _Point);
+   const double rawLevelPrice = MathMax(MathCeil(ask), minStopPrice);
+   const double levelPrice = NormalizeDouble(rawLevelPrice, _Digits);
    if(levelPrice > InpMaxTradePrice)
       return false;
 
-   if(HasOrderOrPositionAtLevel(levelPrice))
-      return false;
+   bundledCount = MathMin(bundledCount, InpMaxBuyOrders);
 
-   const double bundledLot = NormalizeLot(InpLotSize * bundledCount);
    double tp = 0.0;
    if(InpTakeProfitPoints > 0)
       tp = NormalizeDouble(levelPrice + InpTakeProfitPoints * _Point, _Digits);
 
+   const double lot = NormalizeLot(InpLotSize);
+
    trade.SetExpertMagicNumber(InpMagicNumber);
    trade.SetDeviationInPoints(InpSlippagePoints);
 
-   const bool sent = trade.BuyStop(bundledLot,
-                                   levelPrice,
-                                   _Symbol,
-                                   0.0,
-                                   tp,
-                                   ORDER_TIME_GTC,
-                                   0,
-                                   "USOIL Grid BundledStart");
-   if(!sent)
+   int sentCount = 0;
+   for(int i = 0; i < bundledCount; i++)
      {
-      PrintFormat("Bundled start order failed. level=%.2f count=%d lot=%.2f retcode=%d (%s)",
-                  levelPrice,
-                  bundledCount,
-                  bundledLot,
-                  trade.ResultRetcode(),
-                  trade.ResultRetcodeDescription());
-      return false;
+      const bool sent = trade.BuyStop(lot,
+                                      levelPrice,
+                                      _Symbol,
+                                      0.0,
+                                      tp,
+                                      ORDER_TIME_GTC,
+                                      0,
+                                      "USOIL Grid BundledStart");
+      if(!sent)
+        {
+         PrintFormat("Bundled start order failed. level=%.2f idx=%d/%d lot=%.2f retcode=%d (%s)",
+                     levelPrice,
+                     i + 1,
+                     bundledCount,
+                     lot,
+                     trade.ResultRetcode(),
+                     trade.ResultRetcodeDescription());
+         break;
+        }
+
+      sentCount++;
      }
 
-   return true;
+   return (sentCount > 0);
   }
 
 //+------------------------------------------------------------------+
