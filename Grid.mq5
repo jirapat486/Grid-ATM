@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.37"
+#property version   "1.38"
 
 #include <Trade/Trade.mqh>
 
@@ -22,6 +22,8 @@ input int    InpDuplicateTolerancePoints = 10;
 
 CTrade trade;
 datetime g_nextRun = 0;
+bool g_hasBundledStart = false;
+double g_bundledAnchorPrice = 0.0;
 
 int CountEA_Positions();
 int CountEA_Pendings();
@@ -29,6 +31,7 @@ int CountEA_TotalActive();
 void UpdateStatusComment();
 int CalculateBundledOrderCount(const double askPrice);
 bool PlaceBundledStartOrder();
+void ResetBundledStateIfNoExposure();
 
 //+------------------------------------------------------------------+
 //| Convert duplicate tolerance points to price distance             |
@@ -346,7 +349,26 @@ bool PlaceBundledStartOrder()
       sentCount++;
      }
 
-   return (sentCount > 0);
+   if(sentCount > 0)
+     {
+      g_hasBundledStart = true;
+      g_bundledAnchorPrice = levelPrice;
+      return true;
+     }
+
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Reset bundled state once no EA exposure remains                  |
+//+------------------------------------------------------------------+
+void ResetBundledStateIfNoExposure()
+  {
+   if(CountEA_TotalActive() == 0)
+     {
+      g_hasBundledStart = false;
+      g_bundledAnchorPrice = 0.0;
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -362,7 +384,14 @@ void RefillPendingGrid()
    if(activeExposure >= InpMaxBuyOrders)
       return;
 
-   const int steps = (int)MathFloor(((InpMaxTradePrice - InpMinTradePrice) / stepPrice) + 0.0000001);
+   double maxGridPrice = InpMaxTradePrice;
+   if(g_hasBundledStart && g_bundledAnchorPrice > 0.0)
+      maxGridPrice = MathMin(maxGridPrice, g_bundledAnchorPrice);
+
+   if(maxGridPrice < InpMinTradePrice)
+      return;
+
+   const int steps = (int)MathFloor(((maxGridPrice - InpMinTradePrice) / stepPrice) + 0.0000001);
    for(int idx = 0; idx <= steps; idx++)
      {
       if(activeExposure >= InpMaxBuyOrders)
@@ -411,6 +440,7 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    g_nextRun = TimeCurrent();
+   ResetBundledStateIfNoExposure();
 
    if(PlaceBundledStartOrder())
      {
