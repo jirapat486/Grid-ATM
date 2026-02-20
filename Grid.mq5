@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.38"
+#property version   "1.39"
 
 #include <Trade/Trade.mqh>
 
@@ -19,6 +19,7 @@ input int    InpTakeProfitPoints = 1000;
 input ulong  InpMagicNumber      = 20260201;
 input int    InpSlippagePoints   = 20;
 input int    InpDuplicateTolerancePoints = 10;
+input int    InpTimerIntervalSeconds = 300;
 
 CTrade trade;
 datetime g_nextRun = 0;
@@ -32,6 +33,7 @@ void UpdateStatusComment();
 int CalculateBundledOrderCount(const double askPrice);
 bool PlaceBundledStartOrder();
 void ResetBundledStateIfNoExposure();
+void ProcessCycle();
 
 //+------------------------------------------------------------------+
 //| Convert duplicate tolerance points to price distance             |
@@ -408,6 +410,24 @@ void RefillPendingGrid()
   }
 
 //+------------------------------------------------------------------+
+//| Run one EA processing cycle                                      |
+//+------------------------------------------------------------------+
+void ProcessCycle()
+  {
+   g_nextRun = TimeCurrent() + InpTimerIntervalSeconds;
+   ResetBundledStateIfNoExposure();
+
+   if(PlaceBundledStartOrder())
+     {
+      UpdateStatusComment();
+      return;
+     }
+
+   RefillPendingGrid();
+   UpdateStatusComment();
+  }
+
+//+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
@@ -424,6 +444,12 @@ int OnInit()
    if(InpDuplicateTolerancePoints < 0)
       return INIT_PARAMETERS_INCORRECT;
 
+   if(InpTimerIntervalSeconds <= 0)
+      return INIT_PARAMETERS_INCORRECT;
+
+   EventSetTimer(InpTimerIntervalSeconds);
+   g_nextRun = TimeCurrent() + InpTimerIntervalSeconds;
+
    return INIT_SUCCEEDED;
   }
 
@@ -432,6 +458,8 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
+   Comment("");
   }
 
 //+------------------------------------------------------------------+
@@ -439,16 +467,14 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   g_nextRun = TimeCurrent();
-   ResetBundledStateIfNoExposure();
-
-   if(PlaceBundledStartOrder())
-     {
-      UpdateStatusComment();
-      return;
-     }
-
-   RefillPendingGrid();
    UpdateStatusComment();
+  }
+
+//+------------------------------------------------------------------+
+//| Timer function                                                   |
+//+------------------------------------------------------------------+
+void OnTimer()
+  {
+   ProcessCycle();
   }
 //+------------------------------------------------------------------+
