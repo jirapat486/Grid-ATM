@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, JirapatFff"
 #property link      "https://www.mql5.com"
-#property version   "1.34"
+#property version   "1.35"
 
 #include <Trade/Trade.mqh>
 
@@ -21,6 +21,12 @@ input int    InpSlippagePoints   = 20;
 input int    InpDuplicateTolerancePoints = 10;
 
 CTrade trade;
+datetime g_nextRun = 0;
+
+int CountEA_Positions();
+int CountEA_Pendings();
+int CountEA_TotalActive();
+void UpdateStatusComment();
 
 //+------------------------------------------------------------------+
 //| Convert duplicate tolerance points to price distance             |
@@ -128,9 +134,18 @@ bool HasOrderOrPositionAtLevel(const double levelPrice)
 //+------------------------------------------------------------------+
 int CountActiveBuyExposure()
   {
-   int count = 0;
+   return CountEA_TotalActive();
+  }
 
+
+//+------------------------------------------------------------------+
+//| Count EA-owned buy positions only                                |
+//+------------------------------------------------------------------+
+int CountEA_Positions()
+  {
+   int count = 0;
    const int positionsTotal = PositionsTotal();
+
    for(int i = 0; i < positionsTotal; i++)
      {
       const ulong ticket = PositionGetTicket(i);
@@ -147,7 +162,17 @@ int CountActiveBuyExposure()
          count++;
      }
 
+   return count;
+  }
+
+//+------------------------------------------------------------------+
+//| Count EA-owned buy stop pending orders only                      |
+//+------------------------------------------------------------------+
+int CountEA_Pendings()
+  {
+   int count = 0;
    const int ordersTotal = OrdersTotal();
+
    for(int i = 0; i < ordersTotal; i++)
      {
       const ulong ticket = OrderGetTicket(i);
@@ -166,6 +191,40 @@ int CountActiveBuyExposure()
      }
 
    return count;
+  }
+
+//+------------------------------------------------------------------+
+//| Count EA total active trades (positions + pending orders)        |
+//+------------------------------------------------------------------+
+int CountEA_TotalActive()
+  {
+   return CountEA_Positions() + CountEA_Pendings();
+  }
+
+//+------------------------------------------------------------------+
+//| Lightweight status display on chart                              |
+//+------------------------------------------------------------------+
+void UpdateStatusComment()
+  {
+   const double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   const double equity  = AccountInfoDouble(ACCOUNT_EQUITY);
+   const double profit  = AccountInfoDouble(ACCOUNT_PROFIT);
+
+   const int eaPositions = CountEA_Positions();
+   const int eaPendings  = CountEA_Pendings();
+   const int eaTotal     = eaPositions + eaPendings;
+
+   Comment(
+      "Symbol: ", _Symbol, "\n",
+      "Balance: ", DoubleToString(balance, 2),
+      "  Equity: ", DoubleToString(equity, 2),
+      "  Profit: ", DoubleToString(profit, 2), "\n",
+      "EA Positions: ", eaPositions,
+      "  EA Pendings: ", eaPendings,
+      "  EA Total: ", eaTotal, " / ", InpMaxBuyOrders, "\n",
+      "Duplicate tolerance: ", InpDuplicateTolerancePoints, " points\n",
+      "Next run (server): ", TimeToString(g_nextRun, TIME_DATE|TIME_MINUTES|TIME_SECONDS)
+   );
   }
 
 //+------------------------------------------------------------------+
@@ -269,6 +328,8 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
+   g_nextRun = TimeCurrent();
    RefillPendingGrid();
+   UpdateStatusComment();
   }
 //+------------------------------------------------------------------+
